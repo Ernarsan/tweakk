@@ -11,7 +11,6 @@ TWEAK_NAME = standoff2_cheat
 standoff2_cheat_FILES = Tweak.xm
 standoff2_cheat_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -DGLES_SILENCE_DEPRECATION
 standoff2_cheat_FRAMEWORKS = UIKit OpenGLES QuartzCore CoreGraphics Foundation
-standoff2_cheat_PRIVATE_FRAMEWORKS = BackBoardServices
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
