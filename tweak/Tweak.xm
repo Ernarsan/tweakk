@@ -219,7 +219,6 @@ static void runESP(void) {
     if (!memRead(g_baseAddress + OFF_DWVIEWMATRIX, &viewMatrix, sizeof(viewMatrix))) return;
     int localTeam = memReadInt(localPlayer + OFF_M_ITEAMNUM);
 
-    // Сохраняем только нужные матрицы (ручное сохранение)
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -276,7 +275,6 @@ static void runESP(void) {
         drawESPFilledRect(barX, barY, barW, healthH, 0x00FF00FF);
     }
 
-    // Восстанавливаем матрицы
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
@@ -315,9 +313,9 @@ static void (*orig_UIApplication_sendEvent)(id, SEL, UIEvent *);
 static void hook_UIApplication_sendEvent(id self, SEL _cmd, UIEvent *event) {
     orig_UIApplication_sendEvent(self, _cmd, event);
     if (event.type == UIEventTypePresses) {
-        // Используем [event presses] вместо allPresses
+        // Используем только KVO-совместимый доступ (без allPresses)
         NSSet *presses = [event valueForKey:@"presses"];
-        if (!presses) presses = [event allPresses]; // fallback
+        if (!presses) return;
         for (UIPress *press in presses) {
             BOOL isVolDown = NO;
             BOOL isVolUp = NO;
