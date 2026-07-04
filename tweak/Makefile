@@ -9,7 +9,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = standoff2_cheat
 
 standoff2_cheat_FILES = Tweak.xm imgui/imgui.c
-standoff2_cheat_CFLAGS = -fobjc-arc -I./imgui
+standoff2_cheat_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -DGLES_SILENCE_DEPRECATION
 standoff2_cheat_LDFLAGS = -L./imgui
 standoff2_cheat_FRAMEWORKS = UIKit OpenGLES QuartzCore CoreGraphics Foundation
 standoff2_cheat_PRIVATE_FRAMEWORKS = BackBoardServices
