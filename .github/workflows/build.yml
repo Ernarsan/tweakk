@@ -26,6 +26,11 @@ jobs:
           mv sdks-master/* $THEOS/sdks/
           rm -rf sdks-master sdks.zip
 
+      - name: Fix line endings
+        run: |
+          brew install dos2unix
+          find tweak -type f -exec dos2unix {} \;
+
       - name: Build package
         run: |
           export THEOS=${{ env.THEOS }}
