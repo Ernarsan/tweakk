@@ -1,0 +1,35 @@
+name: Build Tweak
+on: [push]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git
+          export THEOS=$(pwd)/theos
+          echo "THEOS=$(pwd)/theos" >> $GITHUB_ENV
+
+      - name: Setup SDK
+        run: |
+          mkdir -p $THEOS/sdks
+          curl -L https://github.com/theos/sdks/archive/master.zip -o sdks.zip
+          unzip sdks.zip
+          mv sdks-master/* $THEOS/sdks/
+          rm -rf sdks-master sdks.zip
+
+      - name: Build package
+        run: |
+          export THEOS=${{ env.THEOS }}
+          make clean
+          make package
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tweak-deb
+          path: packages/*.deb
