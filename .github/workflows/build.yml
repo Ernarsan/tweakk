@@ -31,6 +31,17 @@ jobs:
           brew install dos2unix
           find tweak -type f -exec dos2unix {} \;
 
+      - name: List files (debug)
+        run: |
+          echo "=== Корень ==="
+          ls -la
+          echo "=== Папка tweak ==="
+          ls -la tweak
+          echo "=== Папка tweak/packages ==="
+          ls -la tweak/packages || echo "Нет папки packages"
+          echo "=== Поиск .deb ==="
+          find . -name "*.deb"
+
       - name: Build package
         run: |
           export THEOS=${{ env.THEOS }}
@@ -42,4 +53,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tweak-deb
-          path: packages/*.deb
+          path: |
+            tweak/packages/*.deb
+            **/*.deb
