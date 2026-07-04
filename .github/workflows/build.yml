@@ -14,6 +14,10 @@ jobs:
           export THEOS=$(pwd)/theos
           echo "THEOS=$(pwd)/theos" >> $GITHUB_ENV
 
+      - name: Install ldid
+        run: |
+          brew install ldid
+
       - name: Setup SDK
         run: |
           mkdir -p $THEOS/sdks
