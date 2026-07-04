@@ -1,18 +1,13 @@
 // ============================================================
-// Standoff2 Cheat v2.0 — Gothbreach
-// Platform: iOS 18 (arm64) | Game: Standoff2 0.39.1 f1
-// Features: ESP, Wallhack, No Recoil, ImGui-style menu
-// Toggle: Volume Down button
+// Standoff2 Cheat v2.0 — без ImGui (только ESP, Wallhack, NoRecoil)
+// Управление: Volume Down — включить/выключить все функции
 // ============================================================
 #import <OpenGLES/ES1/gl.h>
-#import <OpenGLES/ES2/gl.h>
-#import <OpenGLES/ES2/glext.h>
 #import <UIKit/UIKit.h>
 #import <mach/mach.h>
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
 #import <substrate.h>
-#import "imgui/imgui.h"
 
 // ============================================================
 // OFFSETS — Standoff2 0.39.1 f1
@@ -31,23 +26,14 @@
 #define OFF_M_BSPOTTED      0x104
 
 #define ENTITY_SIZE         0x10
-#define ENTITY_INDEX        0x8
 #define MAX_PLAYERS         32
 
 // ============================================================
-// CHEAT STATE
+// STATE
 // ============================================================
-static BOOL g_espEnabled       = YES;
-static BOOL g_wallhackEnabled  = YES;
-static BOOL g_noRecoilEnabled  = YES;
-static BOOL g_menuVisible      = NO;
-
-static mach_port_t    g_taskPort     = MACH_PORT_NULL;
-static uintptr_t      g_baseAddress  = 0;
-static uintptr_t      g_localPlayerPtr = 0;
-
-static ImGuiContext   g_imgui;
-static BOOL           g_imguiInitialized = NO;
+static BOOL g_cheatEnabled    = YES;
+static mach_port_t g_taskPort = MACH_PORT_NULL;
+static uintptr_t g_baseAddress = 0;
 static int g_screenW = 0;
 static int g_screenH = 0;
 
@@ -84,8 +70,6 @@ static uintptr_t memReadPtr(uintptr_t addr) {
     return val;
 }
 
-
-
 static int memReadInt(uintptr_t addr) {
     int val = 0;
     memRead(addr, &val, sizeof(val));
@@ -98,7 +82,7 @@ static void memWrite(uintptr_t addr, const void *buffer, size_t size) {
 }
 
 // ============================================================
-// VECTOR / MATRIX MATH
+// MATH
 // ============================================================
 typedef struct { float x, y, z; } vec3_t;
 typedef struct { float x, y; } vec2_t;
@@ -132,7 +116,7 @@ static bool worldToScreen(vec3_t worldPos, vec2_t *screenOut, matrix4x4_t viewMa
 }
 
 // ============================================================
-// ИСПРАВЛЕННЫЕ ФУНКЦИИ РИСОВАНИЯ
+// DRAW FUNCTIONS
 // ============================================================
 static void drawESPBox(float x, float y, float w, float h, uint32_t color) {
     GLfloat verts[] = { x, y, x+w, y, x+w, y+h, x, y+h };
@@ -172,10 +156,10 @@ static void drawESPLine(float x1, float y1, float x2, float y2, uint32_t color) 
 }
 
 // ============================================================
-// HACK LOGIC
+// HACKS
 // ============================================================
 static void runWallhack(void) {
-    if (!g_wallhackEnabled || !g_baseAddress) return;
+    if (!g_cheatEnabled || !g_baseAddress) return;
     uintptr_t entityListBase = memReadPtr(g_baseAddress + OFF_DWENTITYLIST);
     if (!entityListBase) return;
     uintptr_t localPlayer = memReadPtr(g_baseAddress + OFF_DWLOCALPLAYER);
@@ -194,7 +178,7 @@ static void runWallhack(void) {
 }
 
 static void runNoRecoil(void) {
-    if (!g_noRecoilEnabled || !g_baseAddress) return;
+    if (!g_cheatEnabled || !g_baseAddress) return;
     uintptr_t localPlayer = memReadPtr(g_baseAddress + OFF_DWLOCALPLAYER);
     if (!localPlayer) return;
     float zero[3] = { 0.0f, 0.0f, 0.0f };
@@ -202,11 +186,8 @@ static void runNoRecoil(void) {
     memWrite(localPlayer + OFF_M_VIEWPUNCH, zero, sizeof(zero));
 }
 
-// ============================================================
-// ESP (без glPushAttrib/glPopAttrib)
-// ============================================================
 static void runESP(void) {
-    if (!g_espEnabled || !g_baseAddress) return;
+    if (!g_cheatEnabled || !g_baseAddress) return;
     uintptr_t entityListBase = memReadPtr(g_baseAddress + OFF_DWENTITYLIST);
     if (!entityListBase) return;
     uintptr_t localPlayer = memReadPtr(g_baseAddress + OFF_DWLOCALPLAYER);
@@ -278,84 +259,27 @@ static void runESP(void) {
 }
 
 // ============================================================
-// IMGUI MENU
-// ============================================================
-static void buildMenu(void) {
-    if (!g_menuVisible) return;
-    ImGui_NewFrame(&g_imgui);
-    ImGui_BeginWindow(&g_imgui, "Standoff2 Cheat v2.0", 300, 260);
-    ImGui_Checkbox(&g_imgui, "ESP", &g_espEnabled);
-    ImGui_Checkbox(&g_imgui, "Wallhack", &g_wallhackEnabled);
-    ImGui_Checkbox(&g_imgui, "No Recoil", &g_noRecoilEnabled);
-    ImGui_Separator(&g_imgui);
-    char status[128];
-    snprintf(status, sizeof(status), "ESP: %s  WH: %s  NR: %s",
-             g_espEnabled ? "ON" : "OFF",
-             g_wallhackEnabled ? "ON" : "OFF",
-             g_noRecoilEnabled ? "ON" : "OFF");
-    ImGui_Label(&g_imgui, status);
-    ImGui_Separator(&g_imgui);
-    ImGui_Label(&g_imgui, "Volume Down: Toggle Menu");
-    ImGui_Label(&g_imgui, "Volume Up: Cycle Functions");
-    ImGui_Label(&g_imgui, "(when menu is open)");
-    ImGui_EndWindow(&g_imgui);
-    ImGui_Render(&g_imgui);
-}
-
-// ============================================================
-// HOOKS (ARC-совместимые)
+// HOOKS
 // ============================================================
 static void (*orig_UIApplication_sendEvent)(id, SEL, UIEvent *);
 static void hook_UIApplication_sendEvent(id self, SEL _cmd, UIEvent *event) {
     orig_UIApplication_sendEvent(self, _cmd, event);
     if (event.type == UIEventTypePresses) {
-        // Используем только KVO-совместимый доступ (без allPresses)
         NSSet *presses = [event valueForKey:@"presses"];
         if (!presses) return;
         for (UIPress *press in presses) {
+            if (press.phase != UIPressPhaseBegan) continue;
             BOOL isVolDown = NO;
-            BOOL isVolUp = NO;
             if ([press respondsToSelector:@selector(key)]) {
                 NSString *key = [press valueForKey:@"key"];
                 if ([key isEqualToString:UIKeyInputLeftArrow]) isVolDown = YES;
-                else if ([key isEqualToString:UIKeyInputRightArrow]) isVolUp = YES;
             } else {
                 if (press.type == UIPressTypeDownArrow) isVolDown = YES;
-                else if (press.type == UIPressTypeUpArrow) isVolUp = YES;
             }
-            if (press.phase != UIPressPhaseBegan) continue;
             if (isVolDown) {
-                g_menuVisible = !g_menuVisible;
-                NSLog(@"[Cheat] Menu toggled: %d", g_menuVisible);
-            } else if (isVolUp) {
-                if (g_menuVisible) {
-                    if (g_espEnabled) {
-                        g_espEnabled = NO;
-                        g_wallhackEnabled = YES;
-                    } else if (g_wallhackEnabled) {
-                        g_wallhackEnabled = NO;
-                        g_noRecoilEnabled = YES;
-                    } else if (g_noRecoilEnabled) {
-                        g_noRecoilEnabled = NO;
-                    } else {
-                        g_espEnabled = YES;
-                        g_wallhackEnabled = YES;
-                        g_noRecoilEnabled = YES;
-                    }
-                    NSLog(@"[Cheat] Cycle: ESP=%d WH=%d NR=%d",
-                          g_espEnabled, g_wallhackEnabled, g_noRecoilEnabled);
-                } else {
-                    BOOL anyOn = (g_espEnabled || g_wallhackEnabled || g_noRecoilEnabled);
-                    g_espEnabled = !anyOn;
-                    g_wallhackEnabled = !anyOn;
-                    g_noRecoilEnabled = !anyOn;
-                }
+                g_cheatEnabled = !g_cheatEnabled;
+                NSLog(@"[Cheat] Cheat toggled: %d", g_cheatEnabled);
             }
-        }
-    }
-    if (event.type == UIEventTypeRemoteControl) {
-        if (event.subtype == UIEventSubtypeRemoteControlTogglePlayPause) {
-            g_menuVisible = !g_menuVisible;
         }
     }
 }
@@ -366,17 +290,11 @@ static void hook_EAGLContext_presentRenderbuffer(id self, SEL _cmd, GLint render
     if (!initialized) {
         g_taskPort = mach_task_self();
         g_baseAddress = findBaseAddress();
-        if (g_baseAddress) {
-            g_localPlayerPtr = memReadPtr(g_baseAddress + OFF_DWLOCALPLAYER);
-        }
-        NSLog(@"[Cheat] Base: 0x%lx | LocalPlayer: 0x%lx", (unsigned long)g_baseAddress,
-              (unsigned long)g_localPlayerPtr);
+        NSLog(@"[Cheat] Base: 0x%lx", (unsigned long)g_baseAddress);
         UIScreen *screen = [UIScreen mainScreen];
-        CGFloat scale = screen.scale;
         CGSize nativeSize = screen.nativeBounds.size;
         g_screenW = (int)nativeSize.width;
         g_screenH = (int)nativeSize.height;
-        ImGui_Init(&g_imgui, g_screenW, g_screenH, scale);
         initialized = YES;
     }
     orig_EAGLContext_presentRenderbuffer(self, _cmd, renderbuffer);
@@ -384,47 +302,32 @@ static void hook_EAGLContext_presentRenderbuffer(id self, SEL _cmd, GLint render
     runESP();
     runWallhack();
     runNoRecoil();
-    buildMenu();
 }
 
 // ============================================================
-// CONSTRUCTOR (ARC-совместимый)
+// CONSTRUCTOR
 // ============================================================
 %ctor {
     @autoreleasepool {
-        NSLog(@"[Cheat] Standoff2 Cheat v2.0 loading...");
+        NSLog(@"[Cheat] Standoff2 Cheat v2.0 (lite) loading...");
         g_taskPort = mach_task_self();
         g_baseAddress = findBaseAddress();
-        NSLog(@"[Cheat] Game base address: 0x%lx", (unsigned long)g_baseAddress);
         if (!g_baseAddress) {
             NSLog(@"[Cheat] ERROR: Cannot find Standoff2 base address!");
             return;
         }
-        g_localPlayerPtr = memReadPtr(g_baseAddress + OFF_DWLOCALPLAYER);
-        NSLog(@"[Cheat] LocalPlayer ptr: 0x%lx", (unsigned long)g_localPlayerPtr);
-        if (g_screenW == 0) {
-            UIScreen *screen = [UIScreen mainScreen];
-            CGSize nativeSize = screen.nativeBounds.size;
-            g_screenW = (int)nativeSize.width;
-            g_screenH = (int)nativeSize.height;
-        }
+        g_screenW = (int)[UIScreen mainScreen].nativeBounds.size.width;
+        g_screenH = (int)[UIScreen mainScreen].nativeBounds.size.height;
         Class eaglClass = objc_getClass("EAGLContext");
         if (eaglClass) {
             MSHookMessageEx(eaglClass, @selector(presentRenderbuffer:),
                             (IMP)&hook_EAGLContext_presentRenderbuffer,
                             (IMP *)&orig_EAGLContext_presentRenderbuffer);
-            NSLog(@"[Cheat] Hooked EAGLContext presentRenderbuffer:");
-        } else {
-            NSLog(@"[Cheat] ERROR: EAGLContext class not found!");
+            NSLog(@"[Cheat] Hooked EAGLContext");
         }
         MSHookMessageEx(objc_getClass("UIApplication"), @selector(sendEvent:),
                         (IMP)&hook_UIApplication_sendEvent,
                         (IMP *)&orig_UIApplication_sendEvent);
-        NSLog(@"[Cheat] Hooked UIApplication sendEvent:");
-        if (!g_imguiInitialized && g_screenW > 0) {
-            ImGui_Init(&g_imgui, g_screenW, g_screenH, [UIScreen mainScreen].scale);
-            g_imguiInitialized = YES;
-        }
-        NSLog(@"[Cheat] Cheat loaded successfully!");
+        NSLog(@"[Cheat] Cheat loaded. Volume Down to toggle.");
     }
 }
