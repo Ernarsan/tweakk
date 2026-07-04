@@ -84,11 +84,7 @@ static uintptr_t memReadPtr(uintptr_t addr) {
     return val;
 }
 
-static float memReadFloat(uintptr_t addr) {
-    float val = 0;
-    memRead(addr, &val, sizeof(val));
-    return val;
-}
+
 
 static int memReadInt(uintptr_t addr) {
     int val = 0;
