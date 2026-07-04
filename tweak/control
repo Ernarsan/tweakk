@@ -1,0 +1,9 @@
+Package: com.gothbreach.standoff2cheat
+Name: Standoff2 Cheat
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Advanced cheat for Standoff2 v0.39.1 with ESP, Wallhack, No Recoil
+Maintainer: Gothbreach
+Author: Gothbreach
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 14.0)
