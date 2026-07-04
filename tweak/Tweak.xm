@@ -15,7 +15,7 @@
 #import "imgui/imgui.h"
 
 // ============================================================
-// OFFSETS — Standoff2 0.39.1 f1 (верифицировано через dump.cs)
+// OFFSETS — Standoff2 0.39.1 f1
 // ============================================================
 #define OFF_DWLOCALPLAYER   0x18AC0C8
 #define OFF_DWENTITYLIST    0x18AD0D8
@@ -136,7 +136,7 @@ static bool worldToScreen(vec3_t worldPos, vec2_t *screenOut, matrix4x4_t viewMa
 }
 
 // ============================================================
-// ИСПРАВЛЕННЫЕ ФУНКЦИИ РИСОВАНИЯ (без ошибок)
+// ИСПРАВЛЕННЫЕ ФУНКЦИИ РИСОВАНИЯ
 // ============================================================
 static void drawESPBox(float x, float y, float w, float h, uint32_t color) {
     GLfloat verts[] = { x, y, x+w, y, x+w, y+h, x, y+h };
@@ -176,7 +176,7 @@ static void drawESPLine(float x1, float y1, float x2, float y2, uint32_t color) 
 }
 
 // ============================================================
-// HACK LOGIC (без изменений)
+// HACK LOGIC
 // ============================================================
 static void runWallhack(void) {
     if (!g_wallhackEnabled || !g_baseAddress) return;
@@ -206,6 +206,9 @@ static void runNoRecoil(void) {
     memWrite(localPlayer + OFF_M_VIEWPUNCH, zero, sizeof(zero));
 }
 
+// ============================================================
+// ESP (без glPushAttrib/glPopAttrib)
+// ============================================================
 static void runESP(void) {
     if (!g_espEnabled || !g_baseAddress) return;
     uintptr_t entityListBase = memReadPtr(g_baseAddress + OFF_DWENTITYLIST);
@@ -216,7 +219,7 @@ static void runESP(void) {
     if (!memRead(g_baseAddress + OFF_DWVIEWMATRIX, &viewMatrix, sizeof(viewMatrix))) return;
     int localTeam = memReadInt(localPlayer + OFF_M_ITEAMNUM);
 
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    // Сохраняем только нужные матрицы (ручное сохранение)
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -273,11 +276,11 @@ static void runESP(void) {
         drawESPFilledRect(barX, barY, barW, healthH, 0x00FF00FF);
     }
 
+    // Восстанавливаем матрицы
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
-    glPopAttrib();
 }
 
 // ============================================================
@@ -306,13 +309,15 @@ static void buildMenu(void) {
 }
 
 // ============================================================
-// HOOKS
+// HOOKS (ARC-совместимые)
 // ============================================================
 static void (*orig_UIApplication_sendEvent)(id, SEL, UIEvent *);
 static void hook_UIApplication_sendEvent(id self, SEL _cmd, UIEvent *event) {
     orig_UIApplication_sendEvent(self, _cmd, event);
     if (event.type == UIEventTypePresses) {
-        NSSet *presses = [event allPresses];
+        // Используем [event presses] вместо allPresses
+        NSSet *presses = [event valueForKey:@"presses"];
+        if (!presses) presses = [event allPresses]; // fallback
         for (UIPress *press in presses) {
             BOOL isVolDown = NO;
             BOOL isVolUp = NO;
@@ -389,44 +394,43 @@ static void hook_EAGLContext_presentRenderbuffer(id self, SEL _cmd, GLint render
 }
 
 // ============================================================
-// CONSTRUCTOR
+// CONSTRUCTOR (ARC-совместимый)
 // ============================================================
 %ctor {
-    NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
-    NSLog(@"[Cheat] Standoff2 Cheat v2.0 loading...");
-    g_taskPort = mach_task_self();
-    g_baseAddress = findBaseAddress();
-    NSLog(@"[Cheat] Game base address: 0x%lx", (unsigned long)g_baseAddress);
-    if (!g_baseAddress) {
-        NSLog(@"[Cheat] ERROR: Cannot find Standoff2 base address!");
-        [pool release];
-        return;
+    @autoreleasepool {
+        NSLog(@"[Cheat] Standoff2 Cheat v2.0 loading...");
+        g_taskPort = mach_task_self();
+        g_baseAddress = findBaseAddress();
+        NSLog(@"[Cheat] Game base address: 0x%lx", (unsigned long)g_baseAddress);
+        if (!g_baseAddress) {
+            NSLog(@"[Cheat] ERROR: Cannot find Standoff2 base address!");
+            return;
+        }
+        g_localPlayerPtr = memReadPtr(g_baseAddress + OFF_DWLOCALPLAYER);
+        NSLog(@"[Cheat] LocalPlayer ptr: 0x%lx", (unsigned long)g_localPlayerPtr);
+        if (g_screenW == 0) {
+            UIScreen *screen = [UIScreen mainScreen];
+            CGSize nativeSize = screen.nativeBounds.size;
+            g_screenW = (int)nativeSize.width;
+            g_screenH = (int)nativeSize.height;
+        }
+        Class eaglClass = objc_getClass("EAGLContext");
+        if (eaglClass) {
+            MSHookMessageEx(eaglClass, @selector(presentRenderbuffer:),
+                            (IMP)&hook_EAGLContext_presentRenderbuffer,
+                            (IMP *)&orig_EAGLContext_presentRenderbuffer);
+            NSLog(@"[Cheat] Hooked EAGLContext presentRenderbuffer:");
+        } else {
+            NSLog(@"[Cheat] ERROR: EAGLContext class not found!");
+        }
+        MSHookMessageEx(objc_getClass("UIApplication"), @selector(sendEvent:),
+                        (IMP)&hook_UIApplication_sendEvent,
+                        (IMP *)&orig_UIApplication_sendEvent);
+        NSLog(@"[Cheat] Hooked UIApplication sendEvent:");
+        if (!g_imguiInitialized && g_screenW > 0) {
+            ImGui_Init(&g_imgui, g_screenW, g_screenH, [UIScreen mainScreen].scale);
+            g_imguiInitialized = YES;
+        }
+        NSLog(@"[Cheat] Cheat loaded successfully!");
     }
-    g_localPlayerPtr = memReadPtr(g_baseAddress + OFF_DWLOCALPLAYER);
-    NSLog(@"[Cheat] LocalPlayer ptr: 0x%lx", (unsigned long)g_localPlayerPtr);
-    if (g_screenW == 0) {
-        UIScreen *screen = [UIScreen mainScreen];
-        CGSize nativeSize = screen.nativeBounds.size;
-        g_screenW = (int)nativeSize.width;
-        g_screenH = (int)nativeSize.height;
-    }
-    Class eaglClass = objc_getClass("EAGLContext");
-    if (eaglClass) {
-        MSHookMessageEx(eaglClass, @selector(presentRenderbuffer:),
-                        (IMP)&hook_EAGLContext_presentRenderbuffer,
-                        (IMP *)&orig_EAGLContext_presentRenderbuffer);
-        NSLog(@"[Cheat] Hooked EAGLContext presentRenderbuffer:");
-    } else {
-        NSLog(@"[Cheat] ERROR: EAGLContext class not found!");
-    }
-    MSHookMessageEx(objc_getClass("UIApplication"), @selector(sendEvent:),
-                    (IMP)&hook_UIApplication_sendEvent,
-                    (IMP *)&orig_UIApplication_sendEvent);
-    NSLog(@"[Cheat] Hooked UIApplication sendEvent:");
-    if (!g_imguiInitialized && g_screenW > 0) {
-        ImGui_Init(&g_imgui, g_screenW, g_screenH, [UIScreen mainScreen].scale);
-        g_imguiInitialized = YES;
-    }
-    NSLog(@"[Cheat] Cheat loaded successfully!");
-    [pool release];
 }
